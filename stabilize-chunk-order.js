@@ -435,7 +435,9 @@ const stabilizeHtmlRsc = (html, chunkEquivalenceMap, existingCssFiles) => {
 
   // 全push内容を結合してRSC行に分解
   // JSON.parseで正確にアンエスケープ
-  const combinedEscaped = pushes.join("\\n");
+  // push call は行の途中で分割されることがあるため、
+  // 改行ではなく空文字で結合する（各push callの末尾に既に\nがある）
+  const combinedEscaped = pushes.join("");
   const combined = JSON.parse(`"${combinedEscaped}"`);
 
   const stabilized = stabilizeRscPayload(combined, chunkEquivalenceMap, existingCssFiles);
