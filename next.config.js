@@ -39,20 +39,22 @@ module.exports = (() => {
         config.optimization.chunkIds = "deterministic";
         config.optimization.moduleIds = false;
 
-        // モジュールIDの決定性を確保するため、DeterministicModuleIdsPlugin の前に
-        // identifier 内の絶対パス（URLエンコード含���）を相対化するプラグインを追加。
-        // CI環境（CodeBuild等）ではワークディレクトリパスがビルドごとに変わるため、
-        // パスを含む identifier のハッシュが不安定になる問題を回避する。
+        // モジュールID/チャンクIDの決定性を確保するプラグイン。
+        // CI環境(CodeBuild等)ではワークディレクトリパスがビルドごとに変わり
+        // (例: /codebuild/output/srcXXXXXX/src/)、module.request に含まれる
+        // 絶対パスのハッシュが不安定になる。
+        // DeterministicModuleIdsPlugin の前(beforeModuleIds)に module.request 内の
+        // 絶対パス(URLエンコード形式含む)をプロジェクトルートからの相対パスに変換する。
         const projectRoot = path.resolve(__dirname, "../..");
         config.plugins.push({
           apply(compiler) {
             compiler.hooks.compilation.tap("StableModuleIds", (compilation) => {
-              compilation.hooks.optimizeModuleIds.tap("StableModuleIds", (modules) => {
+              compilation.hooks.beforeModuleIds.tap("StableModuleIds", (modules) => {
                 const encodedRoot = projectRoot.split("/").join("%2F");
                 for (const m of modules) {
-                  if (m._identifier && m._identifier.includes(projectRoot)) {
-                    m._identifier = m._identifier.split(projectRoot + "/").join("./");
-                    m._identifier = m._identifier.split(encodedRoot + "%2F").join(".%2F");
+                  if (m.request && m.request.includes(projectRoot)) {
+                    m.request = m.request.split(projectRoot + "/").join("./");
+                    m.request = m.request.split(encodedRoot + "%2F").join(".%2F");
                   }
                 }
               });
