@@ -39,63 +39,6 @@ module.exports = (() => {
         config.optimization.chunkIds = "deterministic";
         config.optimization.moduleIds = false;
 
-        // モジュールID/チャンクIDの決定性を確保するプラグイン。
-        // CI環境(CodeBuild等)ではワークディレクトリパスがビルドごとに変わり
-        // (例: /codebuild/output/srcXXXXXX/src/)、module.identifier() に含まれる
-        // 絶対パスのハッシュが不安定になる。
-        // DeterministicModuleIdsPlugin の前(beforeModuleIds)に全モジュール型の
-        // identifier()に影響するフィールドから絶対パスを相対パスに変換する。
-        //
-        // 対象モジュール型と書き換えフィールド:
-        //   NormalModule:       request
-        //   CssModule:          _identifier, context, _context
-        //   ConcatenatedModule: _identifier + 子モジュールの request
-        //   RawModule:          identifierStr
-        const projectRoot = path.resolve(__dirname, "../..");
-        config.plugins.push({
-          apply(compiler) {
-            compiler.hooks.compilation.tap("StableModuleIds", (compilation) => {
-              compilation.hooks.beforeModuleIds.tap("StableModuleIds", (modules) => {
-                const root = projectRoot + "/";
-                const encodedRoot = projectRoot.split("/").join("%2F") + "%2F";
-                const relativize = (s) => s.split(root).join("./").split(encodedRoot).join(".%2F");
-
-                for (const m of modules) {
-                  // NormalModule: request
-                  if (m.request && m.request.includes(projectRoot)) {
-                    m.request = relativize(m.request);
-                  }
-                  // CssModule: _identifier, context, _context
-                  if (m._identifier && typeof m._identifier === "string" && m._identifier.includes(projectRoot)) {
-                    m._identifier = relativize(m._identifier);
-                  }
-                  if (m._context && typeof m._context === "string" && m._context.includes(projectRoot)) {
-                    m._context = relativize(m._context);
-                  }
-                  if (m.context && typeof m.context === "string" && m.context.includes(projectRoot)) {
-                    m.context = relativize(m.context);
-                  }
-                  // RawModule: identifierStr
-                  if (m.identifierStr && typeof m.identifierStr === "string" && m.identifierStr.includes(projectRoot)) {
-                    m.identifierStr = relativize(m.identifierStr);
-                  }
-                  // ConcatenatedModule: _modules (子モジュールのrequest)
-                  if (m._modules) {
-                    for (const sub of m._modules) {
-                      if (sub.request && sub.request.includes(projectRoot)) {
-                        sub.request = relativize(sub.request);
-                      }
-                      if (sub._identifier && typeof sub._identifier === "string" && sub._identifier.includes(projectRoot)) {
-                        sub._identifier = relativize(sub._identifier);
-                      }
-                    }
-                  }
-                }
-              });
-            });
-          },
-        });
-
         config.plugins.push(
           new webpack.ids.DeterministicModuleIdsPlugin({
             maxLength: 16,

@@ -393,6 +393,18 @@ const stabilizeRscPayload = (text, chunkEquivalenceMap, existingCssFiles) => {
   }
 
   if (treeRow) {
+    // MetadataBoundary の行IDを特定し、ツリー行内の
+    // ランダムなメタデータキー(21文字)を安定した値に置換する。
+    // stabilize-build.js と同等の処理だが、RSC正規化後のIDで実行する。
+    const metadataModuleRow = moduleRows.find((r) => r.content.includes('"MetadataBoundary"'));
+    if (metadataModuleRow) {
+      const mid = metadataModuleRow.newId;
+      const keyPattern = new RegExp(
+        `("\\$1",")[A-Za-z0-9_-]{21}(",\\{"children":\\[\\["\\$","\\$L${mid.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}")`,
+        "g",
+      );
+      treeRow.content = treeRow.content.replace(keyPattern, "$1__stable_metadata_key__$2");
+    }
     output.push(`0:${stripNewlines(treeRow.content)}`);
   }
 
