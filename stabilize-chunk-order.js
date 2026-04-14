@@ -33,36 +33,7 @@ const stabilizeWebpackRuntime = (content) => {
 };
 
 // ============================================================
-// 2. CSS ルール順序を正規化
-// ============================================================
-
-const stabilizeCss = (content) => {
-  const rules = [];
-  let depth = 0;
-  let current = "";
-
-  for (let i = 0; i < content.length; i++) {
-    const ch = content[i];
-    current += ch;
-    if (ch === "{") depth++;
-    if (ch === "}") {
-      depth--;
-      if (depth === 0) {
-        rules.push(current.trim());
-        current = "";
-      }
-    }
-  }
-  if (current.trim()) {
-    rules.push(current.trim());
-  }
-
-  rules.sort();
-  return rules.join("");
-};
-
-// ============================================================
-// 2.5. 互換チャンクの等価マップ構築
+// 3. 互換チャンクの等価マップ構築
 // ============================================================
 
 /**
@@ -487,32 +458,6 @@ const stabilizeScriptOrder = (html, chunkEquivalenceMap) => {
     }
   }
 
-  // CSSプリロード<link>タグをhref順にソート（順序の非決定性対策）
-  // CSSプリロードは削除するとCSSが適用されない画面があるため保持する
-  {
-    const cssPreloads = [];
-    result = result.replace(
-      /<link rel="preload" href="[^"]*\.css" as="style"\/>/g,
-      (match) => {
-        cssPreloads.push(match);
-        return "___CSS_PRELOAD_PLACEHOLDER___";
-      },
-    );
-    cssPreloads.sort((a, b) => {
-      const hrefA = a.match(/href="([^"]*)"/)?.[1] || "";
-      const hrefB = b.match(/href="([^"]*)"/)?.[1] || "";
-      return hrefA.localeCompare(hrefB);
-    });
-    const uniquePreloads = [...new Set(cssPreloads)];
-    let preloadIdx = 0;
-    result = result.replace(/___CSS_PRELOAD_PLACEHOLDER___/g, () => {
-      if (preloadIdx < uniquePreloads.length) {
-        return uniquePreloads[preloadIdx++];
-      }
-      return "";
-    });
-  }
-
   // <head>内のscriptタグを抽出してソート
   const headMatch = result.match(/(<head[^>]*>)([\s\S]*?)(<\/head>)/);
   if (!headMatch) return result;
@@ -592,40 +537,6 @@ const processChunksDir = () => {
       if (fs.existsSync(mapPath)) {
         const newMapName = newName + ".map";
         fs.renameSync(mapPath, path.join(chunksDir, newMapName));
-        renameMap.set(mapFile, newMapName);
-      }
-    }
-  }
-};
-
-const processCssDir = () => {
-  const cssDir = path.join(NEXT_STATIC_DIR, "css");
-  if (!fs.existsSync(cssDir)) return;
-
-  const files = fs.readdirSync(cssDir);
-  for (const file of files) {
-    if (!file.endsWith(".css") || file.endsWith(".css.map")) continue;
-
-    const filePath = path.join(cssDir, file);
-    const original = fs.readFileSync(filePath, "utf-8");
-    const stabilized = stabilizeCss(original);
-
-    if (stabilized !== original) {
-      fs.writeFileSync(filePath, stabilized, "utf-8");
-    }
-
-    const newHash = computeHash(stabilized);
-    const newName = `${newHash}.css`;
-
-    if (newName !== file) {
-      fs.renameSync(filePath, path.join(cssDir, newName));
-      renameMap.set(file, newName);
-
-      const mapFile = file + ".map";
-      const mapPath = path.join(cssDir, mapFile);
-      if (fs.existsSync(mapPath)) {
-        const newMapName = newName + ".map";
-        fs.renameSync(mapPath, path.join(cssDir, newMapName));
         renameMap.set(mapFile, newMapName);
       }
     }
@@ -748,9 +659,13 @@ const updateReferences = (dir) => {
 // 実行
 // ============================================================
 
-// Step 1: webpack runtime, CSS の正規化 + リネーム
+// Step 1: webpack runtime の正規化 + リネーム
+// 注: CSS は補正しない。
+//   webpack の mini-css-extract-plugin は CSS ルール順序を非決定的に出力するが、
+//   ソース不変の範囲での順序変動は機能的に等価でカスケードに影響しない。
+//   ファイル名を安定化する補正は実装可能だがキャッシュ効率の改善のみで
+//   機能的な不具合防止には寄与しないため、保守性を優先して補正を行わない。
 processChunksDir();
-processCssDir();
 
 // Step 2: 非決定的ソースマップを削除
 removeSourceMaps();
