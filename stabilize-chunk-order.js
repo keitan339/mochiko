@@ -487,9 +487,31 @@ const stabilizeScriptOrder = (html, chunkEquivalenceMap) => {
     }
   }
 
-  // CSSプリロード<link>タグを除去（レイアウト非決定性の影響を受けるため）
-  // CSSは<link rel="stylesheet">で確実に読み込まれるのでプリロード除去は安全
-  result = result.replace(/<link rel="preload" href="[^"]*\.css" as="style"\/>/g, "");
+  // CSSプリロード<link>タグをhref順にソート（順序の非決定性対策）
+  // CSSプリロードは削除するとCSSが適用されない画面があるため保持する
+  {
+    const cssPreloads = [];
+    result = result.replace(
+      /<link rel="preload" href="[^"]*\.css" as="style"\/>/g,
+      (match) => {
+        cssPreloads.push(match);
+        return "___CSS_PRELOAD_PLACEHOLDER___";
+      },
+    );
+    cssPreloads.sort((a, b) => {
+      const hrefA = a.match(/href="([^"]*)"/)?.[1] || "";
+      const hrefB = b.match(/href="([^"]*)"/)?.[1] || "";
+      return hrefA.localeCompare(hrefB);
+    });
+    const uniquePreloads = [...new Set(cssPreloads)];
+    let preloadIdx = 0;
+    result = result.replace(/___CSS_PRELOAD_PLACEHOLDER___/g, () => {
+      if (preloadIdx < uniquePreloads.length) {
+        return uniquePreloads[preloadIdx++];
+      }
+      return "";
+    });
+  }
 
   // <head>内のscriptタグを抽出してソート
   const headMatch = result.match(/(<head[^>]*>)([\s\S]*?)(<\/head>)/);
@@ -772,8 +794,6 @@ const finalCleanCssHints = (dir) => {
     // RSCプッシュコール内のCSS HLヒントを除去 (エスケープ形式)
     const before = content;
     content = content.replace(/\\n:HL\[\\"\/app\/_next\/static\/css\/[^"]*\\",\\"style\\"\]/g, "");
-    // link preload CSS (二重チェック)
-    content = content.replace(/<link rel="preload" href="[^"]*\.css" as="style"\/>/g, "");
     if (content !== before) {
       fs.writeFileSync(fullPath, content, "utf-8");
     }
